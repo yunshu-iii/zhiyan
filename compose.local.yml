@@ -1,0 +1,114 @@
+name: zhiyan-local
+
+x-service: &service
+  restart: "no"
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  postgres:
+    <<: *service
+    image: postgres:16
+    mem_limit: 512m
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?missing POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?missing POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?missing POSTGRES_DB}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ./.local/data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  etcd:
+    <<: *service
+    image: quay.io/coreos/etcd:v3.5.18
+    mem_limit: 384m
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    volumes:
+      - ./.local/data/etcd:/etcd
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls=http://0.0.0.0:2379 --data-dir=/etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    <<: *service
+    image: zhiyan-minio:2025-10-15
+    build:
+      context: ./infra/minio
+    mem_limit: 512m
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?missing MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?missing MINIO_ROOT_PASSWORD}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - ./.local/data/minio:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  milvus:
+    <<: *service
+    image: milvusdb/milvus:v2.6.4
+    mem_limit: 3g
+    cpus: 2.0
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?missing MINIO_ROOT_USER}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?missing MINIO_ROOT_PASSWORD}
+      MINIO_REGION: us-east-1
+    volumes:
+      - ./.local/data/milvus:/var/lib/milvus
+    ports:
+      - "127.0.0.1:19530:19530"
+      - "127.0.0.1:9091:9091"
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 10s
+      start_period: 90s
+      timeout: 5s
+      retries: 30
+
+  attu:
+    <<: *service
+    image: zilliz/attu:v2.6.3
+    mem_limit: 256m
+    environment:
+      MILVUS_URL: milvus:19530
+    ports:
+      - "127.0.0.1:18000:3000"
+    depends_on:
+      milvus:
+        condition: service_healthy
+
+networks:
+  default:
+    driver: bridge

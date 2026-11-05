@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+langgraph
+langgraph-checkpoint-postgres
+langchain
+langchain-community
+langchain-milvus
+langchain-openai
+langchain-text-splitters
+dashscope
+pymilvus>=2.6.4,<2.7
+psycopg[binary,pool]
+python-dotenv
+pydantic-settings
+typing_extensions
+httpx

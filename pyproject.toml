@@ -1,0 +1,16 @@
+[project]
+name = "zhiyan"
+version = "0.1.0"
+description = "Local research workspace with a multi-agent workflow and conversation history"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.in"]}
+
+[tool.setuptools.packages.find]
+where = ["app"]
+
+[build-system]
+requires = ["setuptools>=84.1.0"]
+build-backend = "setuptools.build_meta"
